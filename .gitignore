@@ -1,0 +1,8 @@
+*.o
+z80_test
+spectrum_test
+zxsdl
+*.dSYM/
+roms
+misc/
+.DS_Store
