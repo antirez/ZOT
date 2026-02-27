@@ -53,8 +53,9 @@
 /* Fetch a 16-bit immediate (little-endian) and advance PC by 2. */
 #define FETCH16() (cpu->pc += 2, RW(cpu->pc - 2))
 
-/* Register pair getters/setters. The Z80 stores pairs big-endian
- * in registers (B is high byte of BC) but memory is little-endian. */
+/* Register pair getters/setters. In register pairs, the first register
+ * is the high byte (B in BC, D in DE, etc.), while memory words are
+ * little-endian. */
 #define BC() ((uint16_t)((cpu->b << 8) | cpu->c))
 #define DE() ((uint16_t)((cpu->d << 8) | cpu->e))
 #define HL() ((uint16_t)((cpu->h << 8) | cpu->l))
@@ -67,8 +68,8 @@
 #define SET_HL(v) do { uint16_t _v=(v); cpu->h = _v >> 8; cpu->l = _v & 0xFF; } while(0)
 #define SET_AF(v) do { uint16_t _v=(v); cpu->a = _v >> 8; cpu->f = _v & 0xFF; } while(0)
 
-/* Push/pop 16-bit values on the stack. The Z80 pushes high byte first
- * (decrements SP, writes high byte, decrements SP, writes low byte). */
+/* Push/pop 16-bit values on the stack. Final memory layout matches Z80
+ * stack semantics: low byte at [SP], high byte at [SP+1]. */
 #define PUSH(v) do { cpu->sp -= 2; WW(cpu->sp, (v)); } while(0)
 #define POP()   (cpu->sp += 2, RW(cpu->sp - 2))
 
@@ -1696,11 +1697,10 @@ int z80_step(Z80 *cpu) {
 void z80_init(Z80 *cpu) {
     init_tables();
     memset(cpu, 0, sizeof(Z80));
-    /* After reset, PC=0, SP=0xFFFF, A=0xFF, F=0xFF according to some
-     * references, but for simplicity we start with all zeros. The
-     * host system (e.g., ZX Spectrum) typically loads ROM at 0x0000
-     * which sets up the initial state. Setting everything to 0 is
-     * fine since the ROM initializes SP and other registers. */
+    /* Power-on/reset values are not fully deterministic on real hardware.
+     * We use common emulator defaults for compatibility: PC=0, SP=0xFFFF,
+     * A=0xFF, F=0xFF, other fields zeroed. The host ROM will quickly
+     * initialize the rest of the machine state. */
     cpu->sp = 0xFFFF;
     cpu->a = 0xFF;
     cpu->f = 0xFF;

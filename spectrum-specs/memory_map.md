@@ -51,9 +51,10 @@ The stack typically starts at RAMTOP and grows downward. Default RAMTOP for
 
 ## ROM Availability
 
-Amstrad released the Spectrum ROMs into the public domain (with copyright
-notice preserved). The ROM file is exactly 16,384 bytes, commonly named
-"48.rom" or "spectrum.rom". Available bundled with FUSE emulator.
+The Spectrum ROM is still copyrighted, but redistribution for emulator use
+has historically relied on Amstrad's published permission statement (with
+copyright notice preserved and no separate ROM sales). The ROM file is
+exactly 16,384 bytes, commonly named "48.rom" or "spectrum.rom".
 
 ## Sources
 

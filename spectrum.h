@@ -63,7 +63,7 @@
 #define ZX_FIRST_CONTENDED     14335
 #define ZX_CONTENDED_PER_LINE  128     /* T-states of contention per display line */
 
-/* Beeper audio: ~882 samples per frame at 44100 Hz, 50.08 fps. */
+/* Beeper audio: ~882 samples per frame at 44.1 kHz using nominal 50 fps. */
 #define ZX_AUDIO_RATE          44100
 #define ZX_AUDIO_SAMPLES       ((ZX_AUDIO_RATE + 25) / 50)  /* ~882 */
 #define ZX_MAX_BEEPER_EVENTS   4096

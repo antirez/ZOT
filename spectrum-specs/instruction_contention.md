@@ -36,8 +36,8 @@ apply when a condition is met (branch taken, counter nonzero, etc.).
 
 | Instruction(s) | Pattern |
 |---|---|
-| SRO r, BIT b,r, SET b,r, RES b,r | `pc:4, pc+1:4` |
-| SRO (HL), SET/RES b,(HL) | `pc:4, pc+1:4, hl:3, hl:1, hl(w):3` |
+| SRL r, BIT b,r, SET b,r, RES b,r | `pc:4, pc+1:4` |
+| SRL (HL), SET/RES b,(HL) | `pc:4, pc+1:4, hl:3, hl:1, hl(w):3` |
 | BIT b,(HL) | `pc:4, pc+1:4, hl:3, hl:1` |
 
 ## ED-Prefixed Instructions
@@ -75,7 +75,7 @@ apply when a condition is met (branch taken, counter nonzero, etc.).
 
 | Instruction(s) | Pattern |
 |---|---|
-| SRO (IX+d) / SET/RES b,(IX+d) | `pc:4, pc+1:4, pc+2:3, pc+3:3, pc+3:1x2, ix+d:3, ix+d:1, ix+d(w):3` |
+| SRL (IX+d) / SET/RES b,(IX+d) | `pc:4, pc+1:4, pc+2:3, pc+3:3, pc+3:1x2, ix+d:3, ix+d:1, ix+d(w):3` |
 | BIT b,(IX+d) | `pc:4, pc+1:4, pc+2:3, pc+3:3, pc+3:1x2, ix+d:3, ix+d:1` |
 
 ## Notation Key

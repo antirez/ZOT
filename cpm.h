@@ -10,7 +10,8 @@
  * three layers:
  *
  *   CCP  (Console Command Processor) -- the command line ("A>")
- *   BDOS (Basic Disk Operating System) -- ~38 system calls for file I/O,
+ *   BDOS (Basic Disk Operating System) -- 39 system calls (0-37 and 40)
+ *         for file I/O,
  *         console I/O, and disk management
  *   BIOS (Basic I/O System) -- hardware abstraction (serial ports, disks)
  *

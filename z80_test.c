@@ -64,7 +64,7 @@ static void test_reset(void) {
     cpu.io_read = test_io_read;
     cpu.io_write = test_io_write;
     cpu.ctx = NULL;
-    /* Reset to known state: all registers 0, SP=0xFFFF. */
+    /* Reset to known state: all registers 0, SP=0xFFFE. */
     cpu.a = 0; cpu.f = 0;
     cpu.sp = 0xFFFE; /* Use a safe stack address for tests */
 }

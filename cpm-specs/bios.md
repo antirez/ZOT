@@ -3,8 +3,9 @@
 ## Overview
 
 The BIOS is the hardware-dependent layer of CP/M. All physical I/O goes through
-the BIOS. The BDOS calls BIOS routines for disk and character I/O. User programs
-never call BIOS directly -- they go through BDOS via CALL 0005h.
+the BIOS. The BDOS calls BIOS routines for disk and character I/O. Portable
+programs normally use BDOS via CALL 0005h, though some software also calls BIOS
+entry points directly.
 
 ## Memory Map (64K system)
 

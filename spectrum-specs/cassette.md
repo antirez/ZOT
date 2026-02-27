@@ -2,10 +2,11 @@
 
 ## Overview
 
-The ZX Spectrum stores programs on standard audio cassettes using a simple
-FSK (Frequency Shift Keying) encoding scheme. The signal is a square wave
-read through the EAR socket (bit 6 of port $FE). The ROM contains routines
-to save and load data at approximately 1500 bits per second.
+The ZX Spectrum stores programs on standard audio cassettes using pulse-width
+encoding of a square wave (often described in terms of two effective
+frequencies). The signal is read through the EAR socket (bit 6 of port $FE).
+The ROM contains routines to save and load data at roughly 1300-1500 bits/s,
+depending on bit patterns.
 
 ---
 
@@ -62,12 +63,12 @@ polarity does not matter.
 A complete tape block on the wire:
 
 ```
-[Pilot tone] [Sync1] [Sync2] [Flag byte] [Data bytes...] [Parity byte]
+[Pilot tone] [Sync1] [Sync2] [Flag byte] [Data bytes...] [Checksum byte]
 ```
 
 - **Flag byte**: First data byte. `$00` for header blocks, `$FF` for data blocks.
 - **Data bytes**: The payload.
-- **Parity byte**: XOR of all preceding bytes (flag + all data bytes).
+- **Checksum byte**: XOR of all preceding bytes (flag + all data bytes).
   If loading is correct, the running XOR accumulator ends up at zero.
 
 ### Header Block Format (17 bytes after flag)
@@ -80,7 +81,7 @@ A complete tape block on the wire:
 | 13 | 2 | Parameter 1 (autostart line for Program, start address for Code) |
 | 15 | 2 | Parameter 2 (variable area offset for Program, 32768 for Code) |
 
-Total header block on tape: 1 (flag) + 17 (data) + 1 (parity) = **19 bytes**.
+Total header block on tape: 1 (flag) + 17 (data) + 1 (checksum) = **19 bytes**.
 
 ### Header vs Data Blocks
 
@@ -104,10 +105,10 @@ Simple container with no timing information:
 
 ```
 For each block:
-  [length: 2 bytes LE] [flag] [data...] [parity]
+  [length: 2 bytes LE] [flag] [data...] [checksum]
 ```
 
-The length field includes flag and parity bytes.
+The length field includes flag and checksum bytes.
 
 ### TZX Format
 
@@ -226,7 +227,7 @@ looking for a new edge. When B > 198, it's accepted as a valid pilot.
 059F  LD A,C          ;  4T  Current edge state
 05A0  XOR $03         ;  7T  Switch to blue/yellow border stripes
 05A2  LD C,A          ;  4T  Store new border colours
-05A3  LD H,$00        ;  7T  Initialise parity accumulator = 0
+05A3  LD H,$00        ;  7T  Initialise XOR checksum accumulator = 0
 05A5  LD B,$B0        ;  7T  Initial timing constant = 176
 05A7  JR $05C8        ; 12T  Jump to LD-MARKER
 ```
@@ -248,17 +249,17 @@ shifts bits left, inserting the new data bit at bit 0. After 8 bits,
 the original sentinel `1` shifts out of bit 7, setting carry, and the
 `JP NC` falls through.
 
-#### Byte complete ($05D8) and parity check
+#### Byte complete ($05D8) and checksum check
 
 ```
-05D8  LD A,H          ;  4T  Get running parity
+05D8  LD A,H          ;  4T  Get running checksum
 05D9  XOR L           ;  4T  XOR with completed byte
-05DA  LD H,A          ;  4T  Store updated parity
+05DA  LD H,A          ;  4T  Store updated checksum
 05DB  LD A,D          ;  4T  Check remaining byte count
 05DC  OR E            ;  4T
 05DD  JR NZ,$05A9     ; 12T  More bytes -> LD-LOOP
-05DF  LD A,H          ;  4T  Final parity
-05E0  CP $01          ;  7T  Sets carry if H = 0 (good parity)
+05DF  LD A,H          ;  4T  Final checksum
+05E0  CP $01          ;  7T  Sets carry if H = 0 (good checksum)
 05E2  RET             ; 10T  Return with carry = success/failure
 ```
 
@@ -469,7 +470,7 @@ Developed as competition to Novaload and Speedlock.
 
 - Bit 0: DP 465, Bit 1: DP 930 (nearly 2x ROM speed)
 - Standard pilot (2168T) and sync (667/735T) structure
-- Flag byte and parity byte present
+- Flag byte and checksum byte present
 - Uses ROM-like routine with modified timing constants
 - Games: numerous Gremlin Graphics titles
 
@@ -479,7 +480,7 @@ Developed as competition to Novaload and Speedlock.
 - Sync: standard P 667, P 735
 - Bit 0: DP 543, Bit 1: DP 839 (~1.6x ROM speed)
 - Bytes saved in reverse order (DEC IX)
-- Flag byte and parity byte present
+- Flag byte and checksum byte present
 
 #### Elite Systems Loader
 
@@ -488,7 +489,7 @@ Developed as competition to Novaload and Speedlock.
 - Bit 0: DP 452, Bit 1: DP 878 (~1.9x ROM speed)
 - Copy of ROM routine with changed timing constants:
   $B0→$5B, $B2→$5C, $CB→$65, $16→$10
-- Flag byte $FF, parity present
+- Flag byte $FF, checksum present
 
 #### Players 1 Loader
 
@@ -522,7 +523,7 @@ Developed as competition to Novaload and Speedlock.
 - Sync: standard P 667, P 735
 - Normal mode: Bit 0: DP 816, Bit 1: DP 1632 (~1.05x ROM speed)
 - Turbo mode: Bit 0: DP 621, Bit 1: DP 1242 (~1.4x ROM speed)
-- No parity byte
+- No checksum byte
 - Bytes saved in reverse order (DEC IX)
 
 #### Software Projects (SoftLock)

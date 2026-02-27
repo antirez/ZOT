@@ -2,7 +2,7 @@
 
 The ZOT project is a Z80 CPU emulator, a ZX Spectrum 48K emulator, and a CP/M 2.2 operating system emulator, all built on top of the same Z80 core. Everything is written in C with no dependencies beyond the standard library (the SDL frontend is optional), and the Z80 core is small enough to run on microcontrollers like the RP2040 while being accurate enough to pass every documented and undocumented Z80 test in the ZEXALL suite.
 
-The Spectrum emulator is about 3,500 lines of C across four files: the Z80 core (`z80.c`), the Spectrum emulation (`spectrum.c`), the tape player (`tzx.c`), and the SDL frontend (`zxsdl.c`). The CP/M emulator adds another ~2,000 lines across `cpm.c` and its frontends.
+The Spectrum emulator is about 3,600 lines of C across four files: the Z80 core (`z80.c`), the Spectrum emulation (`spectrum.c`), the tape player (`tzx.c`), and the SDL frontend (`zxsdl.c`). The CP/M emulator adds another ~2,900 lines across `cpm.c` and its frontends.
 
 **This project was initially an experiment on clean room development with AI tools**, but turned out to be good enough to be published. Read later for more information about the AI setup used.
 
@@ -17,7 +17,7 @@ This emulator was implemented in a clean room setup using Claude Code Opus 4.6. 
 
 ## The Z80 core
 
-The Z80 CPU emulator lives in `z80.h` and `z80.c`. The central design choice is that `z80_step()` executes one complete instruction and returns how many T-states (clock cycles) it consumed. This is sometimes called "instruction-stepping" as opposed to "cycle-stepping," where each T-state is a separate function call. Cycle-stepping would let you model things like what happens on the bus halfway through a memory write, but in practice no ZX Spectrum software depends on this -- what matters is that each instruction takes the right total number of T-states, and that the flags are set correctly. Instruction-stepping is dramatically simpler, faster, and uses less memory, which matters when the target is a microcontroller with 264KB of RAM.
+The Z80 CPU emulator lives in `z80.h` and `z80.c`. The central design choice is that `z80_step()` executes one complete instruction and returns how many T-states (clock cycles) it consumed. This is sometimes called "instruction-stepping" as opposed to "cycle-stepping," where each T-state is a separate function call. Cycle-stepping would let you model things like what happens on the bus halfway through a memory write, but for most Spectrum software what matters is that each instruction takes the right total number of T-states, and that the flags are set correctly. Instruction-stepping is dramatically simpler, faster, and uses less memory, which matters when the target is a microcontroller with 264KB of RAM.
 
 The CPU state is a plain C struct with individual `uint8_t` fields for each register (A, F, B, C, D, E, H, L, and their shadow counterparts), `uint16_t` for IX, IY, SP, and PC, and function pointers for memory and I/O access. The function pointers are how the Z80 core stays decoupled from any specific system -- the Spectrum provides callbacks that implement its ROM/RAM layout and ULA port decoding, but you could wire the same core into a CP/M machine or an MSX by providing different callbacks.
 
@@ -33,7 +33,7 @@ The Z80 core has 154 unit tests covering every instruction group, flag edge case
 
 To run the tests:
 
-    make test              # 154 unit tests + 49 Spectrum tests
+    make test              # 154 Z80 + 49 Spectrum + 78 CP/M unit tests
     ./z80_test --zexdoc    # ZEXDOC suite (requires z80-specs/zexdoc.com)
     ./z80_test --zexall    # ZEXALL suite (requires z80-specs/zexall.com)
 
@@ -72,7 +72,7 @@ The frame boundary always takes priority over the minimum T-state count -- `zx_t
 
 The Spectrum's screen memory layout is famously non-linear. The 6,144-byte bitmap at 0x4000-0x57FF is divided into three "thirds" of 64 pixel rows each, and within each third, rows are interleaved by character cell. The address bits for pixel (x, y) are:
 
-    010 Y7 Y6 Y2 Y1 Y0 | Y5 Y4 Y3 X7 X6 X5 X4 X3
+    010 Y7 Y6 Y2 Y1 Y0 | Y5 Y4 Y3 X4 X3 X2 X1 X0
 
 This layout was an optimization for the ROM's character printing routine, where `INC H` moves down one pixel line within a character cell. The color attributes at 0x5800-0x5AFF are separate and linear: one byte per 8x8 character cell, encoding ink color (bits 0-2), paper color (bits 3-5), brightness (bit 6), and flash (bit 7).
 
@@ -299,7 +299,7 @@ The same mechanism handles the BIOS: a 17-entry jump table at F200h (BOOT throug
 
 ### BDOS functions
 
-All 38 CP/M 2.2 BDOS functions are implemented:
+All 39 CP/M 2.2 BDOS functions (0-37 and 40) are implemented:
 
 - **Console I/O** (functions 1-12): input with echo, raw output, buffered line input, direct I/O (non-blocking read/write), console status, tab expansion, string output with `$` delimiter, I/O byte management, and CP/M version query.
 - **File system** (functions 13-23, 30, 33-36, 40): open, close, read/write sequential, read/write random, make, delete, rename, search first/next, file size, set random record, set file attributes, disk reset, drive select, DMA address, and write random with zero fill.
@@ -413,17 +413,17 @@ The **CP/M tests** (`cpm_test.c`) verify the complete CP/M emulation: page zero 
 
 | File | Lines | Description |
 |------|-------|-------------|
-| `z80.h` | 131 | Z80 CPU state struct and API |
+| `z80.h` | 130 | Z80 CPU state struct and API |
 | `z80.c` | 1780 | Complete Z80 instruction set implementation |
 | `spectrum.h` | 209 | Spectrum state struct, constants, and API |
-| `spectrum.c` | 699 | ULA emulation: video, audio, keyboard, contention |
-| `tzx.h` | 118 | TZX/TAP tape player struct and API |
+| `spectrum.c` | 701 | ULA emulation: video, audio, keyboard, contention |
+| `tzx.h` | 117 | TZX/TAP tape player struct and API |
 | `tzx.c` | 680 | Tape block parser and pulse generator |
 | `zxsdl.c` | 426 | SDL2 Spectrum frontend |
-| `cpm.h` | 200 | CP/M machine state, constants, and API |
-| `cpm.c` | 2000 | BDOS, BIOS, CCP, and file system implementation |
-| `cpmcon.c` | 490 | Terminal frontend with ADM-3A/Kaypro/VT52→ANSI translation |
-| `cpm_debug.c` | 120 | Trace/debug tool for CP/M programs |
+| `cpm.h` | 204 | CP/M machine state, constants, and API |
+| `cpm.c` | 2116 | BDOS, BIOS, CCP, and file system implementation |
+| `cpmcon.c` | 620 | Terminal frontend with ADM-3A/Kaypro/VT52→ANSI translation |
+| `cpm_debug.c` | 135 | Trace/debug tool for CP/M programs |
 | `rom.h` | - | ZX Spectrum 48K ROM as a C array |
 | `z80_test.c` | - | 154 Z80 unit tests + ZEXDOC/ZEXALL harness |
 | `spectrum_test.c` | - | 49 Spectrum emulation tests |
@@ -438,4 +438,3 @@ MIT. The files in `z80-specs/` are under a different license -- see `z80-specs/R
 The file `rom.h` contains the ZX Spectrum 48K ROM, originally copyright Sinclair Research. The rights were acquired by Amstrad plc, then passed to Sky (which acquired Amstrad in 2007), and ultimately to Comcast (which acquired Sky in 2018). In August 1999, Cliff Lawson of Amstrad plc posted a statement to the `comp.sys.sinclair` newsgroup granting blanket permission for emulator authors to redistribute the ROM images, provided that copyright notices are not altered and that the ROM is not sold separately. Amstrad have kindly given their permission for the redistribution of their copyrighted material but retain that copyright.
 
 This permission has been relied upon by the ZX Spectrum emulation community for over 25 years, and virtually every open-source Spectrum emulator distributes the ROM under these terms. That said, if the current rights holder wishes the ROM to be removed from this repository, please contact antirez@gmail.com and it will be removed promptly.
-

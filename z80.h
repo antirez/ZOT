@@ -61,7 +61,7 @@
  */
 typedef struct Z80 {
     /* Main registers. We store them individually for clarity.
-     * The Z80 is little-endian: in register pair BC, C is the low byte. */
+     * In register pair BC, B is the high byte and C is the low byte. */
     uint8_t a, f;
     uint8_t b, c;
     uint8_t d, e;
@@ -86,7 +86,8 @@ typedef struct Z80 {
 
     /* Interrupt flip-flops and interrupt mode.
      * IFF1 controls whether maskable interrupts are accepted.
-     * IFF2 is a copy of IFF1, readable via LD A,R / LD A,I.
+     * IFF2 stores the previous IFF1 state (used by NMI/RETN) and is
+     * observable via the PV flag in LD A,I / LD A,R.
      * IM is 0, 1, or 2. */
     uint8_t iff1, iff2;
     uint8_t im;

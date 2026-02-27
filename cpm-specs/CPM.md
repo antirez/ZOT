@@ -25,7 +25,7 @@ CP/M 2.2 is a three-layer system:
 |   .COM loader                             |
 +------------------------------------------+
 | BDOS - Basic Disk Operating System ~3.5KB |
-|   38 system calls via CALL 0005h          |
+|   39 system calls (0-37, 40) via CALL 0005h |
 |   File I/O, console I/O, disk management  |
 +------------------------------------------+
 | BIOS - Basic I/O System           ~1.5KB  |
