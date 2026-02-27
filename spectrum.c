@@ -14,8 +14,10 @@
  *   Position:  0  1  2  3  4  5  6  7
  *   Delay:     6  5  4  3  2  1  0  0
  *
- * Instead of a 69,888-byte lookup table, we compute the delay at runtime
- * with a few comparisons and one index into an 8-byte pattern array.
+ * A full frame is 312 scanlines (8 vsync + 56 top border + 192 display +
+ * 56 bottom border) at 224 T-states each = 69,888 T-states. Instead of a
+ * 69,888-byte lookup table, we compute the delay at runtime with a few
+ * comparisons and one index into an 8-byte pattern array.
  *
  * SCREEN MEMORY LAYOUT
  * ====================
@@ -26,7 +28,7 @@
  * moves down one pixel line within a character cell.
  *
  * Address bits for pixel (x, y):
- *   010 Y7 Y6 Y2 Y1 Y0 | Y5 Y4 Y3 X7 X6 X5 X4 X3
+ *   010 Y7 Y6 Y2 Y1 Y0 | Y5 Y4 Y3 X4 X3 X2 X1 X0
  *
  * Attributes at 0x5800-0x5AFF are linear: 32 bytes per character row.
  */

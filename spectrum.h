@@ -185,7 +185,8 @@ void zx_set_ear(ZXSpectrum *zx, uint8_t level);
 /* --- Video --------------------------------------------------------- */
 
 /* Get the current ULA scanline (0-311), or -1 during vsync.
- * Scanlines 0-63: top border, 64-255: display, 256-311: bottom border.
+ * Scanlines 0-7: vsync (returns -1), 8-63: top border,
+ * 64-255: display, 256-311: bottom border.
  * Use this to decide when to grab screen content in on-demand mode. */
 int zx_ula_scanline(ZXSpectrum *zx);
 

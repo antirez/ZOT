@@ -77,7 +77,7 @@ Address = 0x4000
 In binary, the address bits:
 ```
 Bit:  15 14 13 12 11 10  9  8  7  6  5  4  3  2  1  0
-       0  1  0 Y7 Y6 Y2 Y1 Y0 Y5 Y4 Y3 X7 X6 X5 X4 X3
+       0  1  0 Y7 Y6 Y2 Y1 Y0 Y5 Y4 Y3 X4 X3 X2 X1 X0
 ```
 
 The pixel bit within the byte: `7 - (x & 7)` (bit 7 = leftmost pixel).
