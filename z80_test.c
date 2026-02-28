@@ -2138,6 +2138,27 @@ static void test_flags_edge_cases(void) {
         PASS();
     }
 
+    TEST("EI delay: interrupt accepted only after next instruction") {
+        test_reset();
+        cpu.im = 1;
+        uint8_t prog[] = {0xFB, 0x00, 0x00};  /* EI; NOP; NOP */
+        load_bytes(0, prog, sizeof(prog));
+        memory[0x0038] = 0xC9;  /* RET */
+
+        run_steps(1);  /* EI */
+        ASSERT(cpu.iff1 == 1);
+        ASSERT(z80_interrupt(&cpu, 0xFF) == 0);  /* Still delayed */
+        ASSERT_REG(pc, 1);
+
+        run_steps(1);  /* NOP */
+        ASSERT(z80_interrupt(&cpu, 0xFF) == 13); /* Now accepted */
+        ASSERT_REG(pc, 0x0038);
+
+        run_steps(1);  /* RET */
+        ASSERT_REG(pc, 2);  /* Returns to instruction after first NOP */
+        PASS();
+    }
+
     /* Test IM 2 interrupt. */
     TEST("IM 2 vectored interrupt") {
         test_reset();
@@ -2156,6 +2177,51 @@ static void test_flags_edge_cases(void) {
         ASSERT_REG(pc, 0x9000);
         run_steps(2);
         ASSERT_REG(a, 0x42);
+        PASS();
+    }
+
+    TEST("IM 2 uses full data byte (odd vector)") {
+        test_reset();
+        cpu.iff1 = 1;
+        cpu.im = 2;
+        cpu.i = 0x80;
+        memory[0x80FD] = 0x34;
+        memory[0x80FE] = 0x12;
+        z80_interrupt(&cpu, 0xFD);
+        ASSERT_REG(pc, 0x1234);
+        PASS();
+    }
+
+    TEST("IM 0 executes opcode from data bus") {
+        test_reset();
+        cpu.im = 0;
+        cpu.iff1 = 1;
+        cpu.pc = 0x2000;
+        memory[0x2000] = 0x34;  /* CALL immediate low byte */
+        memory[0x2001] = 0x12;  /* CALL immediate high byte */
+
+        int t = z80_interrupt(&cpu, 0xCD);  /* CALL nn from data bus */
+        ASSERT(t == 19);                    /* 17 + 2 acknowledge */
+        ASSERT_REG(pc, 0x1234);
+        ASSERT_REG(sp, 0xFFFC);
+        ASSERT_MEM(0xFFFC, 0x02);           /* Return address = 0x2002 */
+        ASSERT_MEM(0xFFFD, 0x20);
+        PASS();
+    }
+
+    TEST("R increments correctly with ignored DD prefix") {
+        test_reset();
+        cpu.r = 0;
+        uint8_t prog[] = {0xDD, 0x00, 0x00};  /* DD (ignored), NOP, NOP */
+        load_bytes(0, prog, sizeof(prog));
+
+        run_steps(1);
+        ASSERT(cpu.r == 2);   /* Prefix + opcode fetch */
+        ASSERT_REG(pc, 2);    /* DD is ignored, opcode still executed */
+
+        run_steps(1);
+        ASSERT(cpu.r == 3);   /* Final NOP fetch */
+        ASSERT_REG(pc, 3);
         PASS();
     }
 

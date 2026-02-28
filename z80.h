@@ -91,6 +91,9 @@ typedef struct Z80 {
      * IM is 0, 1, or 2. */
     uint8_t iff1, iff2;
     uint8_t im;
+    /* EI blocks maskable interrupt acceptance until after one full
+     * subsequent instruction has executed. */
+    uint8_t ei_delay;
 
     /* HALT state: CPU is halted, executing NOPs until an interrupt. */
     uint8_t halted;

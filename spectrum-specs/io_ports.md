@@ -20,7 +20,7 @@ ANY even-numbered port triggers the ULA (0x00, 0x02, 0x04, ..., 0xFE all work).
 | 3   | Keyboard column 3     | 0 = pressed, 1 = not pressed    |
 | 4   | Keyboard column 4     | 0 = pressed, 1 = not pressed    |
 | 5   | Unused                 | Always 1                        |
-| 6   | EAR input              | Directly from EAR socket        |
+| 6   | EAR input              | EAR line, with board-level coupling to MIC/speaker outputs (Issue-dependent) |
 | 7   | Unused                 | Always 1                        |
 
 The high byte of the port address selects keyboard half-rows (see keyboard.md).

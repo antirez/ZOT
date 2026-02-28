@@ -33,6 +33,9 @@ On Issue 3 hardware (most common 48K):
 - MIC output has minimal effect on EAR input
 - If bit 4 (speaker) is 1, EAR input bit 6 cannot be pulled low
 
+Emulator note: a practical digital approximation is `EAR_read_bit = external_EAR OR speaker_bit`.
+Exact analog behavior differs between board revisions and input signal levels.
+
 ## Emulator Implementation
 
 For audio output, sample bit 4 state at regular intervals matching the host

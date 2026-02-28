@@ -1366,6 +1366,10 @@ Default mode after RESET.
 5. If the instruction is RST, it takes 13 T-states total (11 for RST + 2 extra for acknowledge)
 6. If no device responds, 0xFF is typically read (= RST 38h)
 
+Practical emulator note: adding a flat +2 T-state acknowledge overhead is exact
+for RST-based IM 0 interrupts; very uncommon non-RST IM 0 flows may need
+device-specific bus timing to be cycle-exact.
+
 ### 13.5. Maskable Interrupt -- Mode 1 (IM 1)
 
 Most commonly used mode.
@@ -1392,7 +1396,9 @@ Most powerful mode -- vectored interrupts.
 6. PC is loaded with the 16-bit value read from the address formed in step 5
 7. Total: 19 T-states
 
-**Note**: The official documentation says the vector's LSB must be 0 (even address), but in practice any value works on real hardware.
+**Note**: The IM 2 low byte comes from the interrupting device's data bus value.
+Practical implementations often use even-aligned vector tables, but the CPU
+forms the lookup address from all 8 bits.
 
 The I register holds the high byte of the interrupt vector table. This allows up to 128 different interrupt service routines (256 byte table / 2 bytes per entry).
 
@@ -1400,10 +1406,9 @@ The I register holds the high byte of the interrupt vector table. This allows up
 
 **Purpose**: Return from maskable interrupt service routine.
 - Functionally identical to RET (pops PC from stack)
-- However, it signals to daisy-chained I/O devices that the interrupt is complete
+- At CPU level, RETI and RETN both restore IFF1 from IFF2
+- RETI additionally signals daisy-chained I/O devices that the interrupt is complete
 - The opcode sequence ED 4D is recognized by external hardware
-- IFF1 and IFF2 are NOT modified by RETI (unlike RETN)
-- The programmer should execute EI before RETI to re-enable interrupts
 
 ### 13.8. Interrupt Timing Summary
 

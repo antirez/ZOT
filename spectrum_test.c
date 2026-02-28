@@ -338,6 +338,42 @@ static void test_io_ports(void) {
         ASSERT(zx.border_color == 3);
     } PASS();
 
+    TEST("I/O contention: N:1,C:3 on uncontended even port") {
+        ZXSpectrum zx;
+        zx_init(&zx, zx_spectrum_rom);
+        zx.frame_tstates = 14335;
+        zx.cpu.io_read(&zx, 0x00FE);
+        ASSERT(zx.frame_tstates == 14340);  /* Delay from check at 14336: +5 */
+    } PASS();
+
+    TEST("I/O contention: C:1,C:3 on contended even port") {
+        ZXSpectrum zx;
+        zx_init(&zx, zx_spectrum_rom);
+        zx.frame_tstates = 14335;
+        zx.cpu.io_read(&zx, 0x40FE);
+        ASSERT(zx.frame_tstates == 14341);  /* +6 then +0 */
+    } PASS();
+
+    TEST("I/O contention: C:1x4 on contended odd port") {
+        ZXSpectrum zx;
+        zx_init(&zx, zx_spectrum_rom);
+        zx.frame_tstates = 14335;
+        zx.cpu.io_read(&zx, 0x40FF);
+        ASSERT(zx.frame_tstates == 14347);  /* +6,+0,+6,+0 */
+    } PASS();
+
+    TEST("Issue 3 EAR readback: speaker high forces bit 6 high") {
+        ZXSpectrum zx;
+        zx_init(&zx, zx_spectrum_rom);
+        zx_set_ear(&zx, 0);
+        zx.cpu.io_write(&zx, 0xFE, 0x10);  /* Speaker on */
+        uint8_t val = zx.cpu.io_read(&zx, 0x00FE);
+        ASSERT((val & 0x40) == 0x40);
+        zx.cpu.io_write(&zx, 0xFE, 0x00);  /* Speaker off */
+        val = zx.cpu.io_read(&zx, 0x00FE);
+        ASSERT((val & 0x40) == 0x00);
+    } PASS();
+
     TEST("Unattached port returns 0xFF") {
         ZXSpectrum zx;
         zx_init(&zx, zx_spectrum_rom);
@@ -427,6 +463,19 @@ static void test_frame_timing(void) {
         zx_frame(&zx);
         zx_frame(&zx);
         ASSERT(zx.frame_count == 2);
+    } PASS();
+
+    TEST("Accepted frame INT contributes 13 T-states to next frame") {
+        ZXSpectrum zx;
+        zx_init(&zx, zx_spectrum_rom);
+        zx.memory[0x8000 - 0x4000] = 0x76;  /* HALT */
+        zx.cpu.pc = 0x8000;
+        zx.cpu.iff1 = 1;
+        zx.cpu.iff2 = 1;
+        zx.cpu.im = 1;
+        zx_frame(&zx);
+        ASSERT(zx.frame_count == 1);
+        ASSERT(zx.frame_tstates == 13);
     } PASS();
 
     TEST("Flash toggles every 16 frames") {
@@ -596,6 +645,34 @@ static void test_z80_loading(void) {
 
             ASSERT(zx.frame_count == 50);
         }
+    } PASS();
+
+    TEST("Reject truncated compressed v1 snapshot") {
+        uint8_t bad[34] = {0};
+        bad[6] = 0x01;      /* PC != 0 => v1 */
+        bad[12] = 0x20;     /* Compressed flag */
+        bad[29] = 0x01;     /* IM 1 */
+        bad[30] = 0xED;     /* Tiny RLE stream, far from 48KB output */
+        bad[31] = 0xED;
+        bad[32] = 0x10;
+        bad[33] = 0x00;
+
+        ZXSpectrum zx;
+        zx_init(&zx, zx_spectrum_rom);
+        ASSERT(zx_load_z80(&zx, bad, sizeof(bad)) == -1);
+    } PASS();
+
+    TEST("Reject non-48K v2/v3 hardware mode") {
+        uint8_t bad[55] = {0};
+        bad[30] = 23;       /* Extended header length => v2 */
+        bad[31] = 0;
+        bad[32] = 0x00;     /* PC */
+        bad[33] = 0x80;
+        bad[34] = 3;        /* 128K mode */
+
+        ZXSpectrum zx;
+        zx_init(&zx, zx_spectrum_rom);
+        ASSERT(zx_load_z80(&zx, bad, sizeof(bad)) == -1);
     } PASS();
 }
 

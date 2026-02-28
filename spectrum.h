@@ -104,7 +104,8 @@ typedef struct ZXSpectrum {
     /* ULA state */
     uint8_t border_color;          /* Current border color (0-7) */
     uint8_t speaker;               /* Current speaker level (0 or 1) */
-    uint8_t ear;                   /* EAR input bit (bit 6 of port 0xFE read) */
+    uint8_t mic;                   /* Last MIC output bit; kept for future Issue 2 EAR/MIC modeling */
+    uint8_t ear;                   /* External EAR input level (0 or 1) */
 
     /* Frame timing */
     uint32_t frame_tstates;        /* T-states into current frame (0..69887) */

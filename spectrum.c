@@ -137,6 +137,47 @@ static inline void zx_contend(ZXSpectrum *zx, uint16_t addr) {
         zx->frame_tstates += zx_contend_delay(zx->frame_tstates);
 }
 
+/* Apply 48K I/O contention.
+ *
+ * Patterns (N = uncontended cycle, C = contention check + cycle):
+ *   high byte uncontended, even port: N:1, C:3
+ *   high byte uncontended, odd  port: N:4
+ *   high byte contended,   even port: C:1, C:3
+ *   high byte contended,   odd  port: C:1, C:1, C:1, C:1
+ *
+ * Base cycles are already accounted for by the Z80 instruction timing.
+ * Here we only add the ULA wait-state penalties at each C check point. */
+static inline void zx_contend_io(ZXSpectrum *zx, uint16_t port) {
+    uint8_t high = port >> 8;
+    int high_contended = (high >= 0x40 && high <= 0x7F);
+    uint32_t t = zx->frame_tstates;
+    uint32_t extra = 0;
+
+    if (!(port & 0x01)) {
+        if (high_contended) {
+            /* C:1, C:3 */
+            uint8_t d = zx_contend_delay(t);
+            extra += d;
+            t += d + 1;
+            d = zx_contend_delay(t);
+            extra += d;
+        } else {
+            /* N:1, C:3 */
+            t += 1;
+            extra += zx_contend_delay(t);
+        }
+    } else if (high_contended) {
+        /* C:1, C:1, C:1, C:1 */
+        for (int i = 0; i < 4; i++) {
+            uint8_t d = zx_contend_delay(t);
+            extra += d;
+            t += d + 1;
+        }
+    }
+
+    zx->frame_tstates += extra;
+}
+
 /* ===================================================================
  * Z80 MEMORY / I/O CALLBACKS
  * =================================================================== */
@@ -175,6 +216,7 @@ static void zx_mem_write(void *ctx, uint16_t addr, uint8_t val) {
  *   Returns joystick state 000FUDLR (active HIGH, opposite of keyboard). */
 static uint8_t zx_io_read(void *ctx, uint16_t port) {
     ZXSpectrum *zx = (ZXSpectrum *)ctx;
+    zx_contend_io(zx, port);
 
     /* ULA port: any even address (bit 0 = 0). */
     if (!(port & 0x01)) {
@@ -188,9 +230,10 @@ static uint8_t zx_io_read(void *ctx, uint16_t port) {
                 result &= zx->keyboard[row];
         }
 
-        /* Bit 5: always 1. Bit 6: EAR input. Bit 7: always 1. */
+        /* Bit 5: always 1. Bit 6: EAR input. On Issue 3 hardware,
+         * speaker output high forces EAR high. Bit 7: always 1. */
         result |= 0xA0;
-        if (zx->ear) result |= 0x40;
+        if (zx->ear || zx->speaker) result |= 0x40;
 
         return result;
     }
@@ -205,13 +248,17 @@ static uint8_t zx_io_read(void *ctx, uint16_t port) {
 
 /* I/O write: ULA port controls border color, beeper, and MIC.
  *   Bits 0-2: border color
- *   Bit 3: MIC output (tape saving, we ignore it)
+ *   Bit 3: MIC output (tape saving)
  *   Bit 4: speaker (beeper) */
 static void zx_io_write(void *ctx, uint16_t port, uint8_t val) {
     ZXSpectrum *zx = (ZXSpectrum *)ctx;
+    zx_contend_io(zx, port);
 
     if (!(port & 0x01)) {
         zx->border_color = val & 0x07;
+        /* Keep MIC state so we can add Issue 2/board-accurate tape
+         * coupling later without changing external state layout. */
+        zx->mic = (val >> 3) & 1;
 
         /* Record beeper state change for audio rendering. */
         uint8_t new_speaker = (val >> 4) & 1;
@@ -393,11 +440,6 @@ void zx_init(ZXSpectrum *zx, const uint8_t *rom) {
 
     /* All keys released (active LOW: 0xFF = no keys pressed). */
     memset(zx->keyboard, 0xFF, sizeof(zx->keyboard));
-
-    /* Fire the first frame's interrupt so zx_tick() works immediately.
-     * Subsequent frame interrupts are fired by zx_tick() at each
-     * frame boundary. */
-    z80_interrupt(&zx->cpu, 0xFF);
 }
 
 void zx_set_rom(ZXSpectrum *zx, const uint8_t *rom) {
@@ -451,8 +493,11 @@ int zx_tick(ZXSpectrum *zx, int min_tstates) {
             if ((zx->frame_count % 16) == 0)
                 zx->flash_state ^= 1;
 
-            /* Prepare next frame: fire interrupt, reset scanline and beeper. */
-            z80_interrupt(&zx->cpu, 0xFF);
+            /* Prepare next frame: fire interrupt, and account for the
+             * acknowledge cycles in both CPU and ULA timing domains. */
+            int int_tstates = z80_interrupt(&zx->cpu, 0xFF);
+            zx->cpu.clocks += int_tstates;
+            zx->frame_tstates += int_tstates;
             zx->fb_next_line = 0;
             zx->beeper_event_count = 0;
 
@@ -565,6 +610,7 @@ static int zx_z80_decompress(const uint8_t *src, int src_len,
             dst[di++] = src[si++];
         }
     }
+    if (di != dst_len) return -1;
     return si;
 }
 
@@ -623,10 +669,12 @@ int zx_load_z80(ZXSpectrum *zx, const uint8_t *data, int size) {
         }
     } else {
         /* Version 2 or 3: extended header follows, then memory pages. */
-        if (size < 32) return -1;
+        if (size < 35) return -1;
         uint16_t ext_len = data[30] | (data[31] << 8);
         pc = data[32] | (data[33] << 8);
-        /* data[34] = hardware mode: 0 or 1 = 48K */
+        uint8_t hw_mode = data[34];
+        /* 48K-only loader: accept 48K and 48K+IF1 snapshots. */
+        if (hw_mode != 0 && hw_mode != 1) return -1;
 
         int page_offset = 32 + ext_len;
         if (page_offset > size) return -1;

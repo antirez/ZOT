@@ -616,6 +616,9 @@ static int exec_ddfdcb(Z80 *cpu, uint16_t ixiy) {
     }
 }
 
+/* Forward declaration: used by DD/FD fallback re-decoding. */
+static int exec_opcode(Z80 *cpu, uint8_t op);
+
 /* ===================================================================
  * ED-PREFIX EXECUTION
  * ===================================================================
@@ -1247,19 +1250,34 @@ static int exec_ddfd(Z80 *cpu, uint16_t *ixiy) {
     case 0xBD: alu_cp(cpu, *ixiy & 0xFF); return 8;       /* CP IXL */
 
     default:
-        /* For any opcode that doesn't reference HL/H/L/(HL),
-         * the DD/FD prefix is effectively ignored. We need to
-         * re-decode the instruction as unprefixed. But since
-         * we already consumed the opcode byte and incremented R,
-         * we compensate by decrementing PC and letting the main
-         * loop re-execute it. However, the prefix consumed 4 T-states.
+        /* If this opcode doesn't use HL/H/L/(HL), DD/FD acts as an
+         * ignored prefix and adds 4 T-states.
          *
-         * Actually, for simplicity and correctness, we handle this
-         * by just re-executing the opcode. This is a common approach
-         * in Z80 emulators for unrecognized DD/FD opcodes. */
-        cpu->pc--;
-        INC_R(); /* The main loop will also INC_R, but we already did for the prefix */
-        return 4; /* The prefix itself takes 4 T-states */
+         * Collapse long DD/FD prefix chains iteratively so pathological
+         * input can't build deep recursion. Keep only the last prefix as
+         * effective, as on real Z80 hardware. */
+        if (op == 0xDD || op == 0xFD) {
+            int prefixes = 1; /* Includes the currently-executing prefix. */
+            uint16_t *last_prefix = (op == 0xDD) ? &cpu->ix : &cpu->iy;
+
+            do {
+                op = FETCH();
+                INC_R();
+                prefixes++;
+                if (op == 0xDD || op == 0xFD)
+                    last_prefix = (op == 0xDD) ? &cpu->ix : &cpu->iy;
+            } while (op == 0xDD || op == 0xFD);
+
+            /* We fetched one non-prefix byte too far: rewind PC/R so the
+             * next exec_ddfd() re-reads it exactly once. */
+            cpu->pc--;
+            cpu->r = (cpu->r & 0x80) | ((cpu->r - 1) & 0x7F);
+
+            /* exec_ddfd(last_prefix) accounts for one prefix. Add 4T for
+             * each older ignored prefix in the collapsed chain. */
+            return (prefixes - 1) * 4 + exec_ddfd(cpu, last_prefix);
+        }
+        return 4 + exec_opcode(cpu, op);
     }
 
     return 8; /* Fallthrough for NOP-like cases (LD IXH,IXH etc.) */
@@ -1268,44 +1286,25 @@ static int exec_ddfd(Z80 *cpu, uint16_t *ixiy) {
 /* ===================================================================
  * MAIN OPCODE EXECUTION
  * ===================================================================
- * This is the core of the emulator. Each call to z80_step() fetches
- * one instruction (possibly with prefixes) and executes it.
+ * Execute a fetched opcode (possibly a prefix) and return its T-states.
+ * This helper does not fetch the first opcode byte and does not update
+ * cpu->clocks.
  */
-
-int z80_step(Z80 *cpu) {
+static int exec_opcode(Z80 *cpu, uint8_t op) {
     int tstates = 0;
-
-    /* If halted, execute NOPs until an interrupt wakes us up. */
-    if (cpu->halted) {
-        INC_R();
-        tstates = 4;
-        cpu->clocks += tstates;
-        return tstates;
-    }
-
-    uint8_t op = FETCH();
-    INC_R();
 
     /* Prefixed instructions. */
     if (op == 0xCB) {
-        tstates = exec_cb(cpu);
-        cpu->clocks += tstates;
-        return tstates;
+        return exec_cb(cpu);
     }
     if (op == 0xED) {
-        tstates = exec_ed(cpu);
-        cpu->clocks += tstates;
-        return tstates;
+        return exec_ed(cpu);
     }
     if (op == 0xDD) {
-        tstates = exec_ddfd(cpu, &cpu->ix);
-        cpu->clocks += tstates;
-        return tstates;
+        return exec_ddfd(cpu, &cpu->ix);
     }
     if (op == 0xFD) {
-        tstates = exec_ddfd(cpu, &cpu->iy);
-        cpu->clocks += tstates;
-        return tstates;
+        return exec_ddfd(cpu, &cpu->iy);
     }
 
     /* Decode the unprefixed opcode.
@@ -1603,6 +1602,7 @@ int z80_step(Z80 *cpu) {
                       * Both IFF1 and IFF2 are reset. */
                 cpu->iff1 = 0;
                 cpu->iff2 = 0;
+                cpu->ei_delay = 0;
                 tstates = 4;
                 break;
             case 7: /* EI -- Enable interrupts.
@@ -1610,6 +1610,7 @@ int z80_step(Z80 *cpu) {
                       * NEXT instruction (to allow a RET or similar). */
                 cpu->iff1 = 1;
                 cpu->iff2 = 1;
+                cpu->ei_delay = 1;
                 tstates = 4;
                 break;
             }
@@ -1686,6 +1687,28 @@ int z80_step(Z80 *cpu) {
         break;
     }
 
+    return tstates;
+}
+
+int z80_step(Z80 *cpu) {
+    int tstates;
+
+    /* EI enables maskable interrupts only after one full subsequent
+     * instruction has completed. */
+    if (cpu->ei_delay)
+        cpu->ei_delay = 0;
+
+    /* If halted, execute NOPs until an interrupt wakes us up. */
+    if (cpu->halted) {
+        INC_R();
+        tstates = 4;
+        cpu->clocks += tstates;
+        return tstates;
+    }
+
+    uint8_t op = FETCH();
+    INC_R();
+    tstates = exec_opcode(cpu, op);
     cpu->clocks += tstates;
     return tstates;
 }
@@ -1715,7 +1738,7 @@ void z80_init(Z80 *cpu) {
  *
  * The Z80 supports three interrupt modes:
  *   IM 0: The interrupting device places an instruction on the data bus.
- *          Typically RST 38h (0xFF). We execute it as a RST.
+ *          Typically RST 38h (0xFF), but any opcode is possible.
  *   IM 1: Always executes RST 38h regardless of the data byte.
  *          This is what the ZX Spectrum uses.
  *   IM 2: Vectored interrupt. The I register provides the high byte
@@ -1724,13 +1747,14 @@ void z80_init(Z80 *cpu) {
  *          entry and jumps to it.
  */
 int z80_interrupt(Z80 *cpu, uint8_t data) {
-    if (!cpu->iff1) return 0;
+    if (!cpu->iff1 || cpu->ei_delay) return 0;
 
     /* Acknowledge the interrupt. If halted, advance PC past the HALT
      * instruction so that after the ISR returns, execution continues
      * with the instruction following HALT (not HALT itself). */
     cpu->iff1 = 0;
     cpu->iff2 = 0;
+    cpu->ei_delay = 0;
     if (cpu->halted) {
         cpu->halted = 0;
         cpu->pc++;  /* Skip past the HALT opcode */
@@ -1738,23 +1762,28 @@ int z80_interrupt(Z80 *cpu, uint8_t data) {
 
     switch (cpu->im) {
     case 0:
-        /* IM 0: Execute the instruction on the data bus.
-         * Typically 0xFF = RST 38h. We only support RST instructions
-         * here, which is sufficient for most hardware. */
-        PUSH(cpu->pc);
-        cpu->pc = data & 0x38;  /* RST target from opcode */
-        return 13;
+        /* IM 0: execute the opcode supplied on the data bus.
+         * Interrupt acknowledge is an M1 cycle (increments R) and adds
+         * 2 T-states over normal instruction timing.
+         *
+         * This is exact for the common RST flow. For exotic multi-byte
+         * IM 0 opcodes, the post-ack execution timing depends on how the
+         * external device drives subsequent bytes on real hardware. */
+        INC_R();
+        return exec_opcode(cpu, data) + 2;
 
     case 1:
         /* IM 1: Always RST 38h. */
+        INC_R();
         PUSH(cpu->pc);
         cpu->pc = 0x0038;
         return 13;
 
     case 2:
         /* IM 2: Vectored. Read jump address from (I << 8 | data). */
+        INC_R();
         PUSH(cpu->pc);
-        { uint16_t vector_addr = (cpu->i << 8) | (data & 0xFE);
+        { uint16_t vector_addr = (cpu->i << 8) | data;
           cpu->pc = RW(vector_addr);
         }
         return 19;
@@ -1774,6 +1803,7 @@ int z80_nmi(Z80 *cpu) {
     }
     cpu->iff2 = cpu->iff1;
     cpu->iff1 = 0;
+    cpu->ei_delay = 0;
     PUSH(cpu->pc);
     cpu->pc = 0x0066;
     return 11;
