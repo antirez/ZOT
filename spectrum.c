@@ -250,6 +250,19 @@ static uint8_t zx_io_read(void *ctx, uint16_t port) {
  *   Bits 0-2: border color
  *   Bit 3: MIC output (tape saving)
  *   Bit 4: speaker (beeper) */
+
+static void zx_record_audio_event(ZXSpectrum *zx) {
+    uint8_t combined = zx->speaker | zx->ear;
+    if (combined != zx->audio_level) {
+        zx->audio_level = combined;
+        if (zx->beeper_event_count < ZX_MAX_BEEPER_EVENTS) {
+            zx->beeper_events[zx->beeper_event_count].tstates = zx->frame_tstates;
+            zx->beeper_events[zx->beeper_event_count].level = combined;
+            zx->beeper_event_count++;
+        }
+    }
+}
+
 static void zx_io_write(void *ctx, uint16_t port, uint8_t val) {
     ZXSpectrum *zx = (ZXSpectrum *)ctx;
     zx_contend_io(zx, port);
@@ -261,15 +274,8 @@ static void zx_io_write(void *ctx, uint16_t port, uint8_t val) {
         zx->mic = (val >> 3) & 1;
 
         /* Record beeper state change for audio rendering. */
-        uint8_t new_speaker = (val >> 4) & 1;
-        if (new_speaker != zx->speaker) {
-            zx->speaker = new_speaker;
-            if (zx->beeper_event_count < ZX_MAX_BEEPER_EVENTS) {
-                zx->beeper_events[zx->beeper_event_count].tstates = zx->frame_tstates;
-                zx->beeper_events[zx->beeper_event_count].level = new_speaker;
-                zx->beeper_event_count++;
-            }
-        }
+        zx->speaker = (val >> 4) & 1;
+        zx_record_audio_event(zx);
     }
 }
 
@@ -392,18 +398,10 @@ static void zx_render_audio(ZXSpectrum *zx) {
     int event_idx = 0;
     uint8_t level = 0;
 
-    /* Start with the speaker level at frame start. If there were events
-     * in the previous frame, the last one set the ongoing level. We use
-     * the speaker state at the start of this frame (which was the state
-     * at the end of the last frame, now stored in zx->speaker if no new
-     * events yet). We need to track the initial level. The simplest
-     * approach: if there are events, the level before the first event
-     * is the opposite of the first event's level (since events only
-     * record *changes*). If there are no events, use current speaker. */
-    if (zx->beeper_event_count > 0)
-        level = zx->beeper_events[0].level ? 0 : 1;
-    else
-        level = zx->speaker;
+    /* The level at frame start is what the level was BEFORE all toggles
+     * in the current frame occurred. Since each event is a toggle,
+     * start_level = current_level ^ (count % 2). */
+    level = zx->audio_level ^ (zx->beeper_event_count & 1);
 
     for (int i = 0; i < ZX_AUDIO_SAMPLES; i++) {
         uint32_t sample_t = (uint32_t)((uint64_t)i * ZX_TSTATES_PER_FRAME / ZX_AUDIO_SAMPLES);
@@ -541,6 +539,7 @@ void zx_joy_up(ZXSpectrum *zx, int button) {
 
 void zx_set_ear(ZXSpectrum *zx, uint8_t level) {
     zx->ear = level ? 1 : 0;
+    zx_record_audio_event(zx);
 }
 
 /* ===================================================================

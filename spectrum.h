@@ -121,6 +121,7 @@ typedef struct ZXSpectrum {
     /* Audio: beeper event log for the current frame. */
     ZXBeeperEvent beeper_events[ZX_MAX_BEEPER_EVENTS];
     int beeper_event_count;
+    uint8_t audio_level;           /* Combined speaker | ear level for the event log */
     int16_t audio_buffer[ZX_AUDIO_SAMPLES]; /* PCM output for current frame */
 } ZXSpectrum;
 
