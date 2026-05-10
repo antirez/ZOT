@@ -1,19 +1,82 @@
-# ZOT: a Z80, ZX Spectrum 48K and CP/M 2.2 Emulators
+# ZOT: ZX Spectrum 48K bare metal emulator for Raspberry Pi
 
-The ZOT project is a Z80 CPU emulator, a ZX Spectrum 48K emulator, and a CP/M 2.2 operating system emulator, all built on top of the same Z80 core. Everything is written in C with no dependencies beyond the standard library (the SDL frontend is optional), and the Z80 core is small enough to run on microcontrollers like the RP2040 while being accurate enough to pass every documented and undocumented Z80 test in the ZEXALL suite.
+This repository contains a ZX Spectrum 48K emulator running directly on Raspberry Pi hardware using the [Circle](https://github.com/rsta2/circle) bare-metal environment.
 
-The Spectrum emulator is about 3,600 lines of C across four files: the Z80 core (`z80.c`), the Spectrum emulation (`spectrum.c`), the tape player (`tzx.c`), and the SDL frontend (`zxsdl.c`). The CP/M emulator adds another ~2,900 lines across `cpm.c` and its frontends.
+The bare-metal target is in `circle-zx/` and currently includes:
 
-**This project was initially an experiment on clean room development with AI tools**, but turned out to be good enough to be published. Read later for more information about the AI setup used.
+- Z80 + Spectrum 48K core (`z80.c`, `spectrum.c`)
+- OSD file browser for `.z80`, `.tap`, `.tzx`
+- Tape playback (TAP/TZX) with turbo mode
+- Scaled video output with colored OSD
+- Keyboard mapping + Kempston joystick mapping
+- PWM beeper audio output
 
-## AI Disclaimer
+CP/M code still exists in the repository for host tooling/tests, but it is **not** used in the `circle-zx` bare-metal frontend.
 
-This emulator was implemented in a clean room setup using Claude Code Opus 4.6. The following is the process used in order to write the implementation and avoid contamination with other implementations.
+## Raspberry Pi bare-metal quick start
 
-* No other emulators source code were available to the agent.
-* A human-written design file was provided with the main architecture and goals of the emulator.
-* The agent did a research on the Z80, CP/M specifications and ZX Spectrum internals, ULA, and cassette / image file types. After the information was collected, the agent was restarted with a new session (and the old session removed from disk), so that no contamination of the LLM context with other implementations of Z80, CP/M or ZX Spectrum emulators were possibile.
-* The implementation was performed with human feedbacks steering certain design decisions constantly. The agent had no Internet access during the implementation. No code was written by hand, only prompts and design documents.
+### 1. Build Circle libraries (once per toolchain/config)
+
+```bash
+cd circle
+./makeall clean RASPPI=3
+./makeall RASPPI=3
+cd addon/SDCard && make RASPPI=3
+```
+
+### 2. Build the emulator kernel
+
+```bash
+cd /path/to/zx-pi-metal
+make circle_zx CIRCLEHOME=/path/to/zx-pi-metal/circle RASPPI=3 AARCH=32
+```
+
+This generates:
+
+- `circle-zx/kernel8-32.img`
+
+### 3. Prepare SD card boot files
+
+Copy to the FAT boot partition:
+
+- `circle-zx/kernel8-32.img`
+- `circle-zx/config.txt`
+- Circle firmware files from `circle/boot/` (`bootcode.bin`, `start.elf`, `fixup.dat`, DTBs)
+
+If needed, generate firmware files with:
+
+```bash
+cd circle/boot
+make
+```
+
+### 4. Add games
+
+Put `.z80`, `.tap`, or `.tzx` files in the SD card root directory used by `emmc1-1` (the OSD browser source).
+
+## Controls (Circle frontend)
+
+- **F1**: open/close OSD
+- **F2**: reset Spectrum
+- **F3**: play/restart tape
+- **F4**: stop tape
+- **F6**: toggle turbo tape loading
+- **Arrow keys + Tab**: Kempston joystick
+- **Shift/Ctrl**: CAPS SHIFT / SYMBOL SHIFT
+
+Inside OSD:
+
+- **Up/Down**: select file
+- **Enter**: load file
+- **Esc/F1**: close OSD
+
+### Loading TAP/TZX
+
+1. Open OSD with **F1**
+2. Select `.tap` or `.tzx`, press **Enter**
+3. In BASIC: type `LOAD ""`
+4. Press **F3** to start tape
+5. Optionally enable turbo with **F6**
 
 ## The Z80 core
 
@@ -388,11 +451,26 @@ The CP/M emulator has 78 unit tests covering page zero setup, all BDOS console a
 
 ## Building
 
-The only external dependency is SDL2 (for the Spectrum frontend only -- the Z80 core, Spectrum emulation, tape player, and CP/M emulator have no dependencies beyond the C standard library).
+### Primary target: Circle bare-metal frontend (Raspberry Pi 3B+)
 
-    make            # Build everything
-    make zxsdl      # Build just the Spectrum SDL frontend
-    make cpmcon     # Build just the CP/M terminal frontend
+```bash
+make circle_zx CIRCLEHOME=/path/to/circle RASPPI=3 AARCH=32
+```
+
+Output:
+
+- `circle-zx/kernel8-32.img`
+
+### Host-side builds (secondary)
+
+The host build is mainly useful for development/testing of the emulator core.
+SDL2 is only required for the SDL frontend.
+
+```bash
+make            # Build all host tools/tests
+make zxsdl      # SDL Spectrum frontend
+make cpmcon     # CP/M terminal frontend
+```
 
 ## Testing
 
@@ -420,6 +498,7 @@ The **CP/M tests** (`cpm_test.c`) verify the complete CP/M emulation: page zero 
 | `tzx.h` | 117 | TZX/TAP tape player struct and API |
 | `tzx.c` | 680 | Tape block parser and pulse generator |
 | `zxsdl.c` | 426 | SDL2 Spectrum frontend |
+| `circle-zx/` | - | Circle bare-metal ZX Spectrum frontend for Raspberry Pi |
 | `cpm.h` | 204 | CP/M machine state, constants, and API |
 | `cpm.c` | 2116 | BDOS, BIOS, CCP, and file system implementation |
 | `cpmcon.c` | 620 | Terminal frontend with ADM-3A/Kaypro/VT52→ANSI translation |

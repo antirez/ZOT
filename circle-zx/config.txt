@@ -1,0 +1,4 @@
+# Circle ZX Spectrum bare-metal test config (Raspberry Pi 3B+)
+arm_64bit=0
+initial_turbo=0
+kernel=kernel8-32.img

@@ -24,6 +24,9 @@ cpm_debug: cpm_debug.c cpm.c cpm.h z80.c z80.h
 zxsdl: zxsdl.c spectrum.c spectrum.h z80.c z80.h rom.h tzx.c tzx.h
 	$(CC) $(CFLAGS) $(SDL_CFLAGS) -o zxsdl zxsdl.c spectrum.c z80.c tzx.c $(SDL_LIBS)
 
+circle_zx:
+	$(MAKE) -C circle-zx
+
 test: z80_test spectrum_test cpm_test
 	./z80_test
 	./spectrum_test
@@ -38,4 +41,4 @@ fulltest: z80_test spectrum_test
 clean:
 	rm -rf z80_test spectrum_test cpm_test cpmcon zxsdl *.o *.dSYM
 
-.PHONY: all test fulltest clean
+.PHONY: all test fulltest clean circle_zx
